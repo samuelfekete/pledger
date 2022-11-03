@@ -48,18 +48,26 @@ even if the dispute was received after the withdrawals (as opposed to saying tha
 Design
 ------
 
+The engine is designed to operate on a stream of data, so that it could handle
+arbitrarily large data sets with limited memory, provided there's enough disk space.
+
+Transaction IDs are u32 values, so the maximum number of transactions is 2^32.
+However there's no limit on the number of disputes and resolves that transactions can have,
+so there's no limit on the input stream size, and the engine does not restrict that.
+
 Since disputes can refer to any previous transaction and do not include the amount, 
 we have to keep a complete history of deposits and withdrawals, 
 and as the number of transaction can be large, we keep these in a local database.
 
-We create an intermediary table of transactions with their state after applying the disputes, resolves, and chargebacks.
+We can guarantee that the database won't require space for more that 2^32 rows,
+by mutating deposits and withdrawals, instead of storing the disputes separately. 
+We do this by creating an intermediary table of transactions with their state 
+after applying the disputes, resolves, and chargebacks.
 
-We have to keep track of the order of the transactions so that freezing only rejects
-the transactions after the freeze event, and that checks for overdraws are valid for the state of the account
-at the point when the transaction is made. 
+We have to keep track of the order of the transactions so that checks for overdraws 
+are valid for the state of the account at the point when the transaction is made. 
 We can do that by storing an integer that increments with every incoming transaction.
-We call this `ordinal`, though we can implement it as an auto-incrementing integer primary key in the database,
-(assuming that items are stored in the database in the same order as they are received).
+We call this `ordinal`, though we can implement it as an auto-incrementing integer primary key in the database,(assuming that items are stored in the database in the same order as they are received).
 
 The columns we need are:
 - ordinal (i64 - to maintain the order of transactions)
@@ -69,13 +77,13 @@ The columns we need are:
 - disputed (bool)
 - charged back (bool)
 
+We could have an index on (client ID, tx ID) for quick lookup when updating a transaction.
+
 For deposits `amount` is positive, and for withdrawals `amount` is negative.
-(We could potentially have an index on (client ID, tx ID) for quick lookup when updating a transaction).
 When we come across a dispute, we change `disputed` to `true`. 
 When we come across a resolve, we change `disputed` to `false`.
 When we come across a chargeback, if `disputed` is `true`, we change `disputed` to `false`,
 and change `charged back` to `true`. 
-
 
 To get the sums for an account, we loop over the transactions for each client, in the order that they came in.
 If the transaction is not disputed, we add the amount to `available` and to `total` - provided that
@@ -83,8 +91,7 @@ this does not bring the available amount to below zero.
 If the transaction is disputed, we add the amount to `held` and to `total` - provided that
 this does not bring the available amount to below zero, and if it's a withdrawal we subtract the amount 
 from the available balance.
-If the transaction has been charged back, nothing further is added to the sums, the account is marked as frozen,
-and all subsequent transactions are ignored.
+If the transaction has been charged back, nothing further is added to the sums, the account is marked as frozen, and all subsequent transactions are ignored.
 
 Unsafety
 --------
