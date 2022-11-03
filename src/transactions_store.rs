@@ -51,6 +51,8 @@ impl MutableTransactionStore {
                 disputed        BOOLEAN,
                 charged_back    BOOLEAN
             );
+
+            CREATE INDEX idx_client_transaction ON transactions (client_id, transaction_id);
         ").execute(&self.db_pool).await?;
 
         Ok(())
